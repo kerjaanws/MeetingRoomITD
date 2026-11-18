@@ -1,0 +1,1268 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RoomSync — Sistem Booking & Display Ruang Meeting (BookingV1)</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Font Awesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <!-- Google Fonts: Inter -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <!-- Supabase JS SDK -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.0"></script>
+    <!-- QRCode.js -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+        @keyframes pulse-ring {
+            0% { transform: scale(0.95); opacity: 0.9; }
+            70% { transform: scale(1.35); opacity: 0; }
+            100% { transform: scale(0.95); opacity: 0; }
+        }
+        .live-pulse::after {
+            content: '';
+            position: absolute;
+            inset: 0;
+            border-radius: 9999px;
+            background-color: inherit;
+            animation: pulse-ring 1.8s infinite;
+        }
+        ::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: transparent;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #cbd5e1;
+            border-radius: 9999px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #94a3b8;
+        }
+    </style>
+</head>
+<body class="bg-slate-50 text-slate-800 min-h-screen antialiased selection:bg-blue-600 selection:text-white">
+
+    <!-- Top Navigation & Live Status Header -->
+    <header class="sticky top-0 z-30 bg-white/90 backdrop-blur-md border-b border-slate-200/80 shadow-xs">
+        <div class="w-full max-w-full mx-auto px-2 sm:px-3 lg:px-4 h-16 flex items-center justify-between gap-4">
+            <!-- Brand & Title -->
+            <div onclick="switchView('display')" class="flex items-center gap-3 cursor-pointer group">
+                <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-600 to-indigo-700 flex items-center justify-center text-white shadow-md shadow-blue-600/20 group-hover:scale-105 transition-transform">
+                    <i class="fa-solid fa-door-open text-lg"></i>
+                </div>
+                <div>
+                    <div class="flex items-center gap-2">
+                        <span class="font-extrabold text-sm sm:text-base tracking-tight text-slate-900">Meeting Room SubDit ITD</span>
+                    </div>
+                    <p class="text-[11px] text-slate-500 hidden sm:block">Monitor & Reservasi Ruang Meeting Real-Time</p>
+                </div>
+            </div>
+
+            <!-- Live Clock & Database Status -->
+            <div class="flex items-center gap-2 sm:gap-3">
+                <!-- Tombol Navigasi Halaman 1 & Halaman 2 dengan Ikon -->
+                <div class="hidden sm:flex items-center bg-slate-100 p-1 rounded-xl border border-slate-200">
+                    <button type="button" id="nav-btn-display" onclick="switchView('display')" title="Display Ruangan"
+                        class="px-3 py-1.5 rounded-lg text-xs font-extrabold transition-all bg-white text-blue-700 shadow-xs flex items-center gap-1.5">
+                        <i class="fa-solid fa-tv text-sm"></i>
+                        <span class="hidden md:inline">Display</span>
+                    </button>
+                    <button type="button" id="nav-btn-booking" onclick="switchView('booking')" title="Form Booking Ruangan"
+                        class="px-3 py-1.5 rounded-lg text-xs font-semibold transition-all text-slate-600 hover:text-slate-900 flex items-center gap-1.5">
+                        <i class="fa-solid fa-calendar-plus text-sm"></i>
+                        <span class="hidden md:inline">Booking</span>
+                    </button>
+                </div>
+
+                <button id="btn-back-display" onclick="switchView('display')" class="hidden sm:hidden items-center gap-2 px-3 py-1.5 rounded-xl text-xs font-bold bg-slate-100 hover:bg-slate-200 text-slate-700 transition">
+                    <i class="fa-solid fa-arrow-left"></i>
+                    <span>Display</span>
+                </button>
+
+                <span id="db-status-badge" title="Status koneksi database"
+                    class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-medium border transition-all cursor-default select-none bg-amber-50/70 text-amber-700 border-amber-200/80">
+                    <span id="db-status-dot" class="w-1.5 h-1.5 rounded-full bg-amber-500"></span>
+                    <span id="db-status-text">Lokal</span>
+                </span>
+
+                <div class="text-right bg-blue-50 px-4 py-2 rounded-xl border border-blue-200/90 shadow-xs flex flex-col justify-center">
+                    <div id="live-clock" class="text-base sm:text-xl font-extrabold text-blue-950 tabular-nums tracking-tight leading-none">00:00:00</div>
+                    <div id="live-date" class="text-[11px] sm:text-xs font-semibold text-blue-600 mt-1 leading-none">Memuat tanggal...</div>
+                </div>
+
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Content Container -->
+    <main class="w-full max-w-full mx-auto px-2 sm:px-3 lg:px-4 py-4 sm:py-5 space-y-5">
+
+        <!-- =================================================================== -->
+        <!-- HALAMAN 1: DISPLAY RUANG MEETING (100% WIDTH + AGENDA + QR KANAN)   -->
+        <!-- =================================================================== -->
+        <section id="view-display" class="space-y-5">
+            <!-- Baris Atas: Kartu Status 3 Ruangan Tetap Sticky di Atas Saat Scroll -->
+            <div class="w-full">
+               <div id="rooms-grid" class="grid grid-cols-1 md:grid-cols-3 gap-3 sm:gap-4 w-full">
+                   <!-- Kartu ruangan dirender dinamis oleh JS -->
+               </div>
+           </div>
+
+            <!-- Baris Tengah: Daftar Agenda Ruang Meeting & Riwayat (Kiri) + Panel QR Sticky Dinamis (Kanan) -->
+            <div class="flex flex-col lg:flex-row items-stretch lg:items-start gap-3 sm:gap-4">
+                <!-- Kolom Kiri: Kedua Tabel Agenda Sejajar Simetris Atas-Bawah -->
+                <div class="w-full lg:flex-1 min-w-0 space-y-6">
+                    <!-- Tabel 1: Daftar Agenda Ruang Meeting (Aktif / Mendatang) -->
+                    <div class="w-full bg-white rounded-2xl border border-slate-200/90 shadow-xs overflow-hidden flex flex-col">
+                        <div class="p-4 sm:p-5 border-b border-slate-100 flex flex-wrap items-center justify-between gap-3">
+                            <div class="flex items-center gap-2.5">
+                                <div class="w-8 h-8 rounded-lg bg-blue-50 text-blue-600 border border-blue-200/80 flex items-center justify-center shadow-2xs">
+                                    <i class="fa-regular fa-calendar-check"></i>
+                                </div>
+                                <div>
+                                    <h2 class="text-sm sm:text-base font-extrabold text-slate-900">Daftar Agenda Ruang Meeting</h2>
+                                    <p class="text-[11px] text-slate-500">Diurutkan berdasarkan tanggal dan jam mulai</p>
+                                </div>
+                            </div>
+
+                            <div id="active-count-badge" class="px-3 py-1 bg-blue-50 text-blue-700 border border-blue-200/80 rounded-xl text-xs font-bold">
+                                0 Agenda Aktif
+                            </div>
+                        </div>
+
+                        <!-- Scrollable Agenda Container -->
+                        <div class="overflow-x-auto flex-1">
+                            <div id="agenda-list-scroll" class="max-h-[540px] overflow-y-auto divide-y divide-slate-100">
+                                <!-- Baris Header Keterangan Tabel (Sticky di atas) -->
+                                <div class="sticky top-0 z-10 min-w-[860px] px-4 py-2.5 sm:px-5 bg-slate-100/95 backdrop-blur-xs border-b border-slate-200 grid grid-cols-[145px_95px_125px_minmax(240px,1fr)_90px_140px_68px] items-center gap-2 text-left text-[11px] font-extrabold uppercase tracking-wider text-slate-600">
+                                    <div>Hari/Tgl</div>
+                                    <div>Waktu</div>
+                                    <div>Ruangan</div>
+                                    <div>Agenda</div>
+                                    <div class="text-center">Peserta</div>
+                                    <div>Kontak PIC</div>
+                                    <div class="text-center">Aksi</div>
+                                </div>
+                                <!-- Daftar Agenda Aktif Dirender JS -->
+                                <div id="agenda-list-container" class="divide-y divide-slate-100"></div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Tabel 2: Riwayat Agenda Rapat Selesai (Sejajar Simetris dengan Tabel Atas) -->
+                    <div class="w-full bg-white rounded-2xl border border-slate-200/90 shadow-xs overflow-hidden flex flex-col">
+                        <div class="p-4 sm:p-5 border-b border-slate-100 flex flex-wrap items-center justify-between gap-3">
+                            <div class="flex items-center gap-2.5">
+                                <div class="w-8 h-8 rounded-lg bg-emerald-50 text-emerald-700 flex items-center justify-center">
+                                    <i class="fa-solid fa-clock-rotate-left"></i>
+                                </div>
+                                <div>
+                                    <h2 class="text-sm sm:text-base font-extrabold text-slate-900">Riwayat Agenda Rapat Selesai</h2>
+                                    <p class="text-[11px] text-slate-500">Data riwayat rapat otomatis terhapus dari database setelah lebih dari 1 bulan</p>
+                                </div>
+                            </div>
+                            <div id="completed-count-badge" class="px-3 py-1 bg-slate-100 text-slate-700 rounded-xl text-xs font-bold">
+                                0 Rapat Selesai
+                            </div>
+                        </div>
+
+                        <!-- Scrollable Completed History Container -->
+                        <div class="overflow-x-auto">
+                            <div class="max-h-[360px] overflow-y-auto divide-y divide-slate-100">
+                                <!-- Baris Header Keterangan Tabel Riwayat -->
+                                <div class="sticky top-0 z-10 min-w-[820px] px-4 py-2.5 sm:px-5 bg-slate-100/95 backdrop-blur-xs border-b border-slate-200 grid grid-cols-[185px_115px_145px_minmax(180px,1fr)_165px_110px] items-center gap-3 text-left text-[11px] font-extrabold uppercase tracking-wider text-slate-600">
+                                    <div>Hari/Tgl</div>
+                                    <div>Waktu</div>
+                                    <div>Ruangan</div>
+                                    <div>Agenda</div>
+                                    <div>Kontak PIC</div>
+                                    <div class="text-center">Status</div>
+                                </div>
+                                <!-- Daftar Agenda Selesai Dirender JS -->
+                                <div id="completed-agenda-list-container" class="divide-y divide-slate-100"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Panel QR Code Proporsional & Dinamis Mengikuti Scroll -->
+                <aside class="w-full lg:w-52 shrink-0 lg:sticky lg:top-[276px]">
+                    <div onclick="switchView('booking')" role="button" tabindex="0"
+                        onkeydown="if(event.key==='Enter'||event.key===' '){switchView('booking')}"
+                        title="Scan QR Code dari HP atau klik di sini untuk membuka Form Booking"
+                        class="w-full bg-gradient-to-b from-blue-600 to-indigo-700 hover:from-blue-700 hover:to-indigo-800 text-white rounded-2xl p-5 shadow-md shadow-blue-600/15 border border-blue-500/40 flex flex-col items-center justify-between gap-4 cursor-pointer transition-all group">
+
+                        <div class="flex flex-col items-center text-center gap-1.5">
+                            <span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-white/15 text-xs font-extrabold tracking-wide uppercase whitespace-nowrap">
+                                <i class="fa-solid fa-qrcode"></i> Scan QR
+                            </span>
+                            <p class="text-xs sm:text-sm font-semibold text-blue-100 leading-snug">Booking Ruang Meeting</p>
+                        </div>
+
+                        <!-- Kotak QR Code Dinamis Proporsional -->
+                        <div class="bg-white p-2.5 rounded-xl shadow-inner w-32 h-32 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
+                            <div id="qr-code-target" class="w-full h-full flex items-center justify-center [&>img]:w-full [&>img]:h-full [&>canvas]:w-full [&>canvas]:h-full"></div>
+                        </div>
+
+                        <div class="flex flex-col items-center text-center space-y-2 w-full">
+                            <p class="text-sm font-extrabold leading-tight">Scan untuk Reservasi</p>
+                            <span class="inline-flex items-center justify-center gap-1.5 text-xs font-bold text-white bg-white/15 px-4 py-1.5 rounded-xl group-hover:bg-white/25 transition whitespace-nowrap">
+                                Buka Form <i class="fa-solid fa-arrow-right text-[10px]"></i>
+                            </span>
+                        </div>
+                    </div>
+                </aside>
+            </div>
+        </section>
+
+        <!-- =================================================================== -->
+        <!-- HALAMAN 2: FORM BOOKING RUANG MEETING                               -->
+        <!-- =================================================================== -->
+        <section id="view-booking" class="hidden max-w-2xl mx-auto">
+            <div class="bg-white rounded-3xl border border-slate-200/90 shadow-lg shadow-slate-200/50 overflow-hidden">
+                <div class="bg-gradient-to-r from-slate-900 via-slate-800 to-indigo-950 px-6 py-5 text-white flex items-center justify-between gap-4">
+                    <div>
+                        <span class="inline-flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-blue-300">
+                            <i class="fa-solid fa-calendar-plus"></i> Reservasi Ruangan Baru
+                        </span>
+                        <h2 class="text-lg sm:text-xl font-extrabold mt-0.5">Booking Ruang Meeting</h2>
+                    </div>
+                    <button type="button" onclick="switchView('display')"
+                        class="px-3 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-white text-xs font-bold transition flex items-center gap-1.5">
+                        <i class="fa-solid fa-tv"></i>
+                        <span>Lihat Display</span>
+                    </button>
+                </div>
+
+                <form id="booking-form" onsubmit="handleBookingSubmit(event)" class="p-5 sm:p-6 space-y-5">
+                    <div>
+                        <label for="input-title" class="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1.5">
+                            1. Nama Agenda / Topik Meeting <span class="text-rose-500">*</span>
+                        </label>
+                        <input type="text" id="input-title" required placeholder="Contoh: Weekly Sync Product & Engineering"
+                            class="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-sm font-medium text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-600 transition">
+                    </div>
+
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                        <div>
+                            <label for="input-name" class="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1.5">
+                                2. Nama PIC / Pemesan <span class="text-rose-500">*</span>
+                            </label>
+                            <input type="text" id="input-name" required placeholder="Contoh: Budi Santoso"
+                                class="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-sm font-medium text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-600 transition">
+                        </div>
+                        <div>
+                            <label for="input-wa" class="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1.5">
+                                Nomor WhatsApp PIC <span class="text-rose-500">*</span>
+                            </label>
+                            <div class="relative">
+                                <span class="absolute left-3.5 top-1/2 -translate-y-1/2 text-emerald-600 text-sm">
+                                    <i class="fa-brands fa-whatsapp"></i>
+                                </span>
+                                <input type="tel" id="input-wa" required placeholder="081234567890"
+                                    class="w-full pl-9 pr-3.5 py-2.5 rounded-xl border border-slate-300 text-sm font-medium text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-600 transition">
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="grid grid-cols-1 sm:grid-cols-3 gap-3.5">
+                        <div>
+                            <label for="input-date" class="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1.5">
+                                3. Tanggal <span class="text-rose-500">*</span>
+                            </label>
+                            <input type="date" id="input-date" required onchange="validateLiveAvailability()"
+                                class="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-sm font-medium text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-600 transition">
+                        </div>
+                        <div>
+                            <label for="input-start" class="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1.5">
+                                Jam Mulai <span class="text-rose-500">*</span>
+                            </label>
+                            <input type="time" id="input-start" required onchange="validateLiveAvailability()"
+                                class="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-sm font-medium text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-600 transition">
+                        </div>
+                        <div>
+                            <label for="input-end" class="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1.5">
+                                Jam Selesai <span class="text-rose-500">*</span>
+                            </label>
+                            <input type="time" id="input-end" required onchange="validateLiveAvailability()"
+                                class="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-sm font-medium text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-600 transition">
+                        </div>
+                    </div>
+
+                    <div class="space-y-3.5">
+                        <div class="grid grid-cols-1 sm:grid-cols-3 gap-3.5">
+                            <div>
+                                <label for="input-participants" class="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1.5">
+                                    4. Peserta <span class="text-rose-500">*</span>
+                                </label>
+                                <div class="relative">
+                                    <input type="number" id="input-participants" min="1" max="16" value="6" required
+                                        oninput="handleParticipantsChange()"
+                                        class="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-sm font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-600 transition">
+                                    <span class="absolute right-3 top-1/2 -translate-y-1/2 text-[11px] font-semibold text-slate-400">Orang</span>
+                                </div>
+                            </div>
+
+                            <div>
+                                <label for="input-room" class="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1.5">
+                                    Pilih Ruangan <span class="text-rose-500">*</span>
+                                </label>
+                                <select id="input-room" onchange="handleRoomManualChange()"
+                                    class="w-full px-3 py-2.5 rounded-xl border border-slate-300 text-sm font-semibold text-slate-900 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-600 transition">
+                                    <option value="Bravery">Bravery (Maks 10)</option>
+                                    <option value="Agility">Agility (Maks 10)</option>
+                                    <option value="Integrity">Integrity (Maks 10)</option>
+                                    <option value="Bravery + Agility">Bravery + Agility (Maks 16)</option>
+                                </select>
+                            </div>
+
+                            <div>
+                                <label for="input-cancel-pin" class="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1.5">
+                                    PIN Batal (4 Digit) <span class="text-rose-500">*</span>
+                                </label>
+                                <div class="relative">
+                                    <span class="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-xs">
+                                        <i class="fa-solid fa-lock"></i>
+                                    </span>
+                                    <input type="password" id="input-cancel-pin" inputmode="numeric" pattern="[0-9]{4}" maxlength="4" required
+                                        placeholder="••••"
+                                        oninput="this.value = this.value.replace(/[^0-9]/g, '').slice(0, 4)"
+                                        class="w-full pl-8 pr-3 py-2.5 rounded-xl border border-slate-300 text-sm font-extrabold tracking-[0.35em] text-center text-slate-900 placeholder:tracking-normal placeholder:font-normal placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-600 transition">
+                                </div>
+                            </div>
+                        </div>
+
+                        <div id="partition-recommendation-box" class="hidden p-3 rounded-xl bg-indigo-50 border border-indigo-200 text-indigo-900 text-xs flex items-start gap-2.5">
+                            <i class="fa-solid fa-object-group text-indigo-600 mt-0.5 text-sm"></i>
+                            <div>
+                                <p class="font-bold">Mode Gabungan Partisi Aktif (> 10 Peserta)</p>
+                                <p class="text-indigo-700 mt-0.5 leading-relaxed">
+                                    Karena peserta lebih dari 10 orang, ruangan otomatis dipilih ke <strong>Bravery + Agility</strong> (Kapasitas 16 orang).
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div id="availability-feedback" class="hidden p-3.5 rounded-xl text-xs font-medium border"></div>
+
+                    <div class="pt-1 flex flex-col sm:flex-row items-center gap-2.5">
+                        <button type="button" onclick="switchView('display')"
+                            class="w-full sm:w-auto px-4 py-3 rounded-xl border border-slate-300 hover:bg-slate-100 text-slate-700 font-bold text-sm transition">
+                            Batal
+                        </button>
+                        <button type="submit" id="btn-submit-booking"
+                            class="w-full flex-1 py-3 px-4 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-bold text-sm shadow-md shadow-blue-600/20 active:scale-[0.99] transition-all flex items-center justify-center gap-2">
+                            <i class="fa-solid fa-check-circle"></i>
+                            <span>Konfirmasi Booking Ruangan</span>
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </section>
+
+    </main>
+
+    <!-- =================================================================== -->
+    <!-- MODAL 1: KONFIRMASI PIN HAPUS / BATALKAN JADWAL                     -->
+    <!-- =================================================================== -->
+    <div id="pin-modal" class="fixed inset-0 z-50 hidden items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4">
+        <div class="bg-white rounded-2xl max-w-sm w-full p-6 shadow-2xl border border-slate-200">
+            <div class="w-12 h-12 rounded-2xl bg-rose-50 text-rose-600 flex items-center justify-center text-xl mb-4 mx-auto border border-rose-100">
+                <i class="fa-solid fa-shield-halved"></i>
+            </div>
+            <h3 class="text-lg font-extrabold text-slate-900 text-center">Batalkan Jadwal Meeting?</h3>
+            <p id="pin-modal-desc" class="text-xs text-slate-500 text-center mt-1.5 leading-relaxed">
+                Masukkan 4 digit PIN pembatalan yang dibuat saat booking jadwal ini.
+            </p>
+
+            <form onsubmit="confirmDeleteWithPin(event)" class="mt-5 space-y-4">
+                <div>
+                    <input type="password" id="pin-input" inputmode="numeric" maxlength="4" required placeholder="••••"
+                        oninput="this.value = this.value.replace(/[^0-9]/g, '').slice(0, 4)"
+                        class="w-full text-center tracking-[0.5em] text-xl font-extrabold py-3 rounded-xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-rose-500/30 focus:border-rose-600">
+                    <p id="pin-error-msg" class="hidden text-xs text-rose-600 font-semibold text-center mt-2">
+                        PIN salah! Masukkan PIN pembatalan yang sesuai.
+                    </p>
+                </div>
+
+                <div class="grid grid-cols-2 gap-2.5">
+                    <button type="button" onclick="closePinModal()"
+                        class="py-2.5 px-4 rounded-xl border border-slate-300 text-slate-700 font-bold text-xs hover:bg-slate-50 transition">
+                        Batal
+                    </button>
+                    <button type="submit"
+                        class="py-2.5 px-4 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs shadow-sm transition">
+                        Hapus Jadwal
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- =================================================================== -->
+    <!-- MODAL 2: PENGATURAN SUPABASE & KEAMANAN                             -->
+    <!-- =================================================================== -->
+    <div id="settings-modal" class="fixed inset-0 z-50 hidden items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4 overflow-y-auto">
+        <div class="bg-white rounded-2xl max-w-xl w-full p-6 shadow-2xl border border-slate-200 my-8">
+            <div class="flex items-center justify-between pb-4 border-b border-slate-100">
+                <div class="flex items-center gap-2.5">
+                    <div class="w-9 h-9 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center">
+                        <i class="fa-solid fa-database"></i>
+                    </div>
+                    <div>
+                        <h3 class="text-base font-extrabold text-slate-900">Koneksi Supabase & Pengaturan</h3>
+                        <p class="text-xs text-slate-500">Hubungkan database real-time Anda atau gunakan mode lokal</p>
+                    </div>
+                </div>
+                <button onclick="closeSettingsModal()" class="p-2 text-slate-400 hover:text-slate-700 rounded-lg">
+                    <i class="fa-solid fa-xmark text-lg"></i>
+                </button>
+            </div>
+
+            <div class="mt-4 space-y-4">
+                <div>
+                    <label class="block text-xs font-bold text-slate-700 mb-1">Supabase Project URL</label>
+                    <input type="url" id="cfg-supabase-url" placeholder="https://xyzcompany.supabase.co"
+                        class="w-full px-3.5 py-2 rounded-xl border border-slate-300 text-xs font-mono focus:outline-none focus:border-blue-600">
+                </div>
+
+                <div>
+                    <label class="block text-xs font-bold text-slate-700 mb-1">Supabase Anon Public Key</label>
+                    <input type="text" id="cfg-supabase-key" placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+                        class="w-full px-3.5 py-2 rounded-xl border border-slate-300 text-xs font-mono focus:outline-none focus:border-blue-600">
+                </div>
+
+                <div>
+                    <label class="block text-xs font-bold text-slate-700 mb-1">PIN Master Admin (Cadangan Hapus Jadwal)</label>
+                    <input type="text" id="cfg-security-pin" maxlength="8" placeholder="1234"
+                        class="w-full px-3.5 py-2 rounded-xl border border-slate-300 text-xs font-mono focus:outline-none focus:border-blue-600">
+                </div>
+
+                <div class="flex flex-wrap items-center justify-between gap-2 pt-2">
+                    <button type="button" onclick="resetToDemoMode()"
+                        class="px-3.5 py-2 rounded-xl border border-slate-300 text-slate-600 hover:bg-slate-50 text-xs font-bold">
+                        Reset Data Demo Lokal
+                    </button>
+                    <div class="flex items-center gap-2">
+                        <button type="button" onclick="closeSettingsModal()"
+                            class="px-4 py-2 rounded-xl border border-slate-300 text-slate-700 text-xs font-bold hover:bg-slate-50">
+                            Tutup
+                        </button>
+                        <button type="button" onclick="saveSupabaseSettings()"
+                            class="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold shadow-sm">
+                            Simpan & Hubungkan
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast Notification Container -->
+    <div id="toast-container" class="fixed bottom-5 right-5 z-50 flex flex-col gap-2 max-w-sm w-full pointer-events-none px-4 sm:px-0"></div>
+
+    <!-- =================================================================== -->
+    <!-- JAVASCRIPT APPLICATION LOGIC                                        -->
+    <!-- =================================================================== -->
+    <script>
+        // ===== KONFIGURASI SUPABASE (isi di sini supaya semua perangkat otomatis terhubung) =====
+        const SUPABASE_URL = 'https://fziegkuthirldtpfhoyw.supabase.co';       // contoh: https://xxxx.supabase.co
+        const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZ6aWVna3V0aGlybGR0cGZob3l3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTQ3OTM4NDMsImV4cCI6MjExMDM2OTg0M30.wO7XnIo5mLaGxMsIM1ot7OenJk3RX_rQe6_X3e31_jU';  // anon / publishable key (JANGAN service_role)
+        const RETENTION_DAYS = 31;     // data lebih lama dari ini tidak ditampilkan
+        // ========================================================================================
+
+        function getCutoffStr() {
+            const d = new Date();
+            d.setDate(d.getDate() - RETENTION_DAYS);
+            return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+        }
+
+        const ROOMS_CONFIG = [
+            { id: 'Bravery', name: 'Bravery', capacity: 10, partitionPartner: 'Agility', accent: 'blue' },
+            { id: 'Agility', name: 'Agility', capacity: 10, partitionPartner: 'Bravery', accent: 'indigo' },
+            { id: 'Integrity', name: 'Integrity', capacity: 10, partitionPartner: null, accent: 'emerald' }
+        ];
+
+        const STORAGE_KEYS = {
+            BOOKINGS: 'roomsync_bookings_v1',
+            SUPABASE_URL: 'roomsync_supabase_url',
+            SUPABASE_KEY: 'roomsync_supabase_key',
+            SECURITY_PIN: 'roomsync_security_pin'
+        };
+
+        let bookings = [];
+        let supabaseClient = null;
+        let isSupabaseConnected = false;
+        let realtimeChannel = null;
+        let pendingDeleteId = null;
+        let userManuallySelectedRoom = false;
+        let currentView = 'display';
+
+        window.addEventListener('DOMContentLoaded', async () => {
+            initDateAndClock();
+            setupDefaultFormValues();
+            generateDynamicQrCode();
+            handleInitialRoute();
+            await initDatabaseConnection();
+
+            setInterval(async () => {
+                renderAll();
+            }, 15000);
+        });
+
+        window.addEventListener('hashchange', () => {
+            if (window.location.hash === '#booking' && currentView !== 'booking') {
+                switchView('booking', false);
+            } else if (window.location.hash !== '#booking' && currentView !== 'display') {
+                switchView('display', false);
+            }
+        });
+
+        function handleInitialRoute() {
+            const params = new URLSearchParams(window.location.search);
+            const isBookingMode = params.get('mode') === 'booking' || window.location.hash === '#booking';
+            switchView(isBookingMode ? 'booking' : 'display', false);
+        }
+
+        function switchView(viewName, updateUrl = true) {
+            currentView = viewName;
+            const displayEl = document.getElementById('view-display');
+            const bookingEl = document.getElementById('view-booking');
+            const backBtn = document.getElementById('btn-back-display');
+            const navDisplayBtn = document.getElementById('nav-btn-display');
+            const navBookingBtn = document.getElementById('nav-btn-booking');
+
+            if (navDisplayBtn && navBookingBtn) {
+                if (viewName === 'booking') {
+                    navBookingBtn.className = 'px-3 py-1.5 rounded-lg text-xs font-extrabold transition-all bg-white text-blue-700 shadow-xs flex items-center gap-1.5';
+                    navDisplayBtn.className = 'px-3 py-1.5 rounded-lg text-xs font-semibold transition-all text-slate-600 hover:text-slate-900 flex items-center gap-1.5';
+                } else {
+                    navDisplayBtn.className = 'px-3 py-1.5 rounded-lg text-xs font-extrabold transition-all bg-white text-blue-700 shadow-xs flex items-center gap-1.5';
+                    navBookingBtn.className = 'px-3 py-1.5 rounded-lg text-xs font-semibold transition-all text-slate-600 hover:text-slate-900 flex items-center gap-1.5';
+                }
+            }
+
+            if (viewName === 'booking') {
+                displayEl.classList.add('hidden');
+                bookingEl.classList.remove('hidden');
+                if (backBtn) backBtn.classList.add('hidden');
+                document.title = "BookingV1 — Form Booking Ruang Meeting";
+                validateLiveAvailability();
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+            } else {
+                bookingEl.classList.add('hidden');
+                displayEl.classList.remove('hidden');
+                if (backBtn) backBtn.classList.add('hidden');
+                document.title = "WS — MeetingRoomITD";
+                renderAll();
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+            }
+
+            if (updateUrl) {
+                try {
+                    if (window.location.protocol === 'blob:') {
+                        window.location.hash = viewName === 'booking' ? '#booking' : '';
+                    } else {
+                        const url = new URL(window.location.href);
+                        if (viewName === 'booking') {
+                            url.searchParams.set('mode', 'booking');
+                            url.hash = 'booking';
+                        } else {
+                            url.searchParams.delete('mode');
+                            url.hash = '';
+                        }
+                        window.history.replaceState({}, '', url.toString());
+                    }
+                } catch (err) {
+                    window.location.hash = viewName === 'booking' ? '#booking' : '';
+                }
+            }
+        }
+
+        function generateDynamicQrCode() {
+            const target = document.getElementById('qr-code-target');
+            if (!target) return;
+            target.innerHTML = '';
+
+            let bookingUrl = '';
+            try {
+                if (window.location.protocol === 'blob:') {
+                    bookingUrl = window.location.href.split('#')[0] + '#booking';
+                } else {
+                    const urlObj = new URL(window.location.href);
+                    urlObj.searchParams.set('mode', 'booking');
+                    urlObj.hash = 'booking';
+                    bookingUrl = urlObj.toString();
+                }
+            } catch (err) {
+                bookingUrl = window.location.href.split('#')[0] + '#booking';
+            }
+
+            if (typeof QRCode !== 'undefined') {
+                new QRCode(target, {
+                    text: bookingUrl,
+                    width: 140,
+                    height: 140,
+                    colorDark: '#0f172a',
+                    colorLight: '#ffffff',
+                    correctLevel: QRCode.CorrectLevel.M
+                });
+            } else {
+                target.innerHTML = '<i class="fa-solid fa-qrcode text-4xl text-slate-900"></i>';
+            }
+        }
+
+        function initDateAndClock() {
+            const updateClock = () => {
+                const now = new Date();
+                const clockEl = document.getElementById('live-clock');
+                const dateEl = document.getElementById('live-date');
+                if (clockEl) {
+                    clockEl.textContent = now.toLocaleTimeString('id-ID', {
+                        hour: '2-digit', minute: '2-digit', second: '2-digit'
+                    }).replace(/\./g, ':');
+                }
+                if (dateEl) {
+                    dateEl.textContent = now.toLocaleDateString('id-ID', {
+                        weekday: 'long', day: 'numeric', month: 'short', year: 'numeric'
+                    });
+                }
+            };
+            updateClock();
+            setInterval(updateClock, 1000);
+        }
+
+        function getTodayStr() {
+            const now = new Date();
+            return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+        }
+
+        function timeToMinutes(timeStr) {
+            if (!timeStr) return 0;
+            const [h, m] = String(timeStr).split(':').map(Number);
+            return (h || 0) * 60 + (m || 0);
+        }
+
+        function formatTimeShort(timeStr) {
+            if (!timeStr) return '--:--';
+            return String(timeStr).slice(0, 5);
+        }
+
+        function formatFullDayAndDateParts(dateStr) {
+            if (!dateStr) return { dayName: '-', dateText: '-' };
+            const [y, m, d] = dateStr.split('-').map(Number);
+            const dt = new Date(y, (m || 1) - 1, d || 1);
+            return {
+                dayName: dt.toLocaleDateString('id-ID', { weekday: 'long' }),
+                dateText: dt.toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' })
+            };
+        }
+
+        function formatShortDayDate(dateStr) {
+            const { dayName, dateText } = formatFullDayAndDateParts(dateStr);
+            return `${dayName}, ${dateText}`;
+        }
+
+        function setupDefaultFormValues() {
+            const today = getTodayStr();
+            const inputDate = document.getElementById('input-date');
+            if (inputDate) inputDate.value = today;
+
+            const now = new Date();
+            const nextHour = (now.getHours() + 1) % 24;
+            const endHour = (nextHour + 1) % 24;
+            const inputStart = document.getElementById('input-start');
+            const inputEnd = document.getElementById('input-end');
+            if (inputStart) inputStart.value = `${String(nextHour).padStart(2, '0')}:00`;
+            if (inputEnd) inputEnd.value = `${String(endHour).padStart(2, '0')}:00`;
+        }
+
+        function updateDbBadge(isConnected) {
+            const badge = document.getElementById('db-status-badge');
+            const dot = document.getElementById('db-status-dot');
+            const text = document.getElementById('db-status-text');
+            if (!badge || !text) return;
+
+            if (isConnected) {
+                badge.className = 'inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-medium border transition-all cursor-default select-none bg-emerald-50/70 text-emerald-700 border-emerald-200/80';
+                badge.title = 'Terhubung ke Supabase Real-Time';
+                if (dot) dot.className = 'w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse';
+                text.textContent = 'Live';
+            } else {
+                badge.className = 'inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-medium border transition-all cursor-default select-none bg-amber-50/70 text-amber-700 border-amber-200/80';
+                badge.title = 'Menggunakan Mode Lokal';
+                if (dot) dot.className = 'w-1.5 h-1.5 rounded-full bg-amber-500';
+                text.textContent = 'Lokal';
+            }
+        }
+
+        async function initDatabaseConnection() {
+            const savedUrl = SUPABASE_URL || localStorage.getItem(STORAGE_KEYS.SUPABASE_URL) || '';
+            const savedKey = SUPABASE_ANON_KEY || localStorage.getItem(STORAGE_KEYS.SUPABASE_KEY) || '';
+            const savedPin = localStorage.getItem(STORAGE_KEYS.SECURITY_PIN) || '1234';
+
+            document.getElementById('cfg-supabase-url').value = savedUrl;
+            document.getElementById('cfg-supabase-key').value = savedKey;
+            document.getElementById('cfg-security-pin').value = savedPin;
+
+            if (savedUrl && savedKey && window.supabase) {
+                try {
+                    supabaseClient = window.supabase.createClient(savedUrl, savedKey);
+                    const { data, error } = await supabaseClient.from('bookings').select('*').gte('booking_date', getCutoffStr()).order('booking_date', { ascending: true });
+                    if (error) throw error;
+                    bookings = data || [];
+                    isSupabaseConnected = true;
+                    updateDbBadge(true);
+                    setupRealtimeSubscription();
+                    renderAll();
+                    return;
+                } catch (err) {
+                    console.warn('Gagal menghubungkan Supabase:', err.message);
+                }
+            }
+
+            isSupabaseConnected = false;
+            updateDbBadge(false);
+            loadLocalBookings();
+            renderAll();
+        }
+
+        function setupRealtimeSubscription() {
+            if (!supabaseClient) return;
+            if (realtimeChannel) supabaseClient.removeChannel(realtimeChannel);
+            realtimeChannel = supabaseClient.channel('public:bookings')
+                .on('postgres_changes', { event: '*', schema: 'public', table: 'bookings' }, async () => {
+                    const { data, error } = await supabaseClient.from('bookings').select('*').gte('booking_date', getCutoffStr()).order('booking_date', { ascending: true });
+                    if (!error && data) {
+                        bookings = data;
+                        renderAll();
+                    }
+                }).subscribe();
+        }
+
+        function loadLocalBookings() {
+            const raw = localStorage.getItem(STORAGE_KEYS.BOOKINGS);
+            if (raw) {
+                try {
+                    const parsed = JSON.parse(raw);
+                    if (Array.isArray(parsed) && parsed.some(b => isBookingCompleted(b))) {
+                        bookings = parsed;
+                        return;
+                    }
+                } catch (e) {}
+            }
+
+            const today = getTodayStr();
+            const yesterdayObj = new Date();
+            yesterdayObj.setDate(yesterdayObj.getDate() - 1);
+            const yesterday = `${yesterdayObj.getFullYear()}-${String(yesterdayObj.getMonth() + 1).padStart(2, '0')}-${String(yesterdayObj.getDate()).padStart(2, '0')}`;
+            const tomorrowObj = new Date();
+            tomorrowObj.setDate(tomorrowObj.getDate() + 1);
+            const tomorrow = `${tomorrowObj.getFullYear()}-${String(tomorrowObj.getMonth() + 1).padStart(2, '0')}-${String(tomorrowObj.getDate()).padStart(2, '0')}`;
+            const curH = new Date().getHours();
+            const fmt = (h) => `${String(Math.min(23, Math.max(0, h))).padStart(2, '0')}:00`;
+
+            bookings = [
+                { id: 'demo-1', room: 'Bravery', title: 'Daily Standup & Sprint Review', booker_name: 'Nadia Putri', whatsapp: '6281234567890', booking_date: today, start_time: fmt(curH), end_time: fmt(curH + 1), participants: 8, cancel_pin: '1234' },
+                { id: 'demo-2', room: 'Integrity', title: 'Client Onboarding Presentation', booker_name: 'Raka Pratama', whatsapp: '6281398765432', booking_date: today, start_time: fmt(curH + 2), end_time: fmt(curH + 3), participants: 6, cancel_pin: '1234' },
+                { id: 'demo-3', room: 'Bravery + Agility', title: 'Townhall & Quarterly Alignment', booker_name: 'Dimas Saputra', whatsapp: '6285711223344', booking_date: tomorrow, start_time: '09:30', end_time: '11:30', participants: 15, cancel_pin: '1234' },
+                { id: 'demo-done-1', room: 'Agility', title: 'Evaluasi Infrastruktur & Keamanan Server', booker_name: 'Andi Wijaya', whatsapp: '6281299887766', booking_date: yesterday, start_time: '13:30', end_time: '15:00', participants: 7, cancel_pin: '1234' }
+            ];
+            saveLocalBookings();
+        }
+
+        function saveLocalBookings() {
+            localStorage.setItem(STORAGE_KEYS.BOOKINGS, JSON.stringify(bookings));
+        }
+
+        function isBookingCompleted(booking) {
+            const today = getTodayStr();
+            if (!booking || !booking.booking_date) return false;
+            if (booking.booking_date < today) return true;
+            if (booking.booking_date > today) return false;
+            const nowMinutes = new Date().getHours() * 60 + new Date().getMinutes();
+            return nowMinutes >= timeToMinutes(booking.end_time);
+        }
+
+        function roomMatchesBooking(roomId, bookingRoom) {
+            if (roomId === bookingRoom) return true;
+            if (bookingRoom === 'Bravery + Agility' && (roomId === 'Bravery' || roomId === 'Agility')) return true;
+            if (roomId === 'Bravery + Agility' && (bookingRoom === 'Bravery' || bookingRoom === 'Agility')) return true;
+            return false;
+        }
+
+        function getRoomLiveStatus(roomId) {
+            const today = getTodayStr();
+            const nowMinutes = new Date().getHours() * 60 + new Date().getMinutes();
+
+            const todayRoomBookings = bookings
+                .filter(b => b.booking_date === today && roomMatchesBooking(roomId, b.room))
+                .sort((a, b) => timeToMinutes(a.start_time) - timeToMinutes(b.start_time));
+
+            const activeBooking = todayRoomBookings.find(b => {
+                return nowMinutes >= timeToMinutes(b.start_time) && nowMinutes < timeToMinutes(b.end_time);
+            });
+
+            if (activeBooking) {
+                return { state: 'occupied', booking: activeBooking, isPartitionMerged: activeBooking.room === 'Bravery + Agility' };
+            }
+
+            const nextBooking = todayRoomBookings.find(b => timeToMinutes(b.start_time) > nowMinutes);
+            if (nextBooking) {
+                const diffMins = timeToMinutes(nextBooking.start_time) - nowMinutes;
+                return { state: diffMins <= 30 ? 'upcoming_soon' : 'available', nextBooking, diffMins };
+            }
+
+            return { state: 'available', nextBooking: null };
+        }
+
+        function findConflict(dateStr, startStr, endStr, targetRoom) {
+            const reqStart = timeToMinutes(startStr);
+            const reqEnd = timeToMinutes(endStr);
+            return bookings.find(b => {
+                if (b.booking_date !== dateStr) return false;
+                if (!roomMatchesBooking(targetRoom, b.room)) return false;
+                return reqStart < timeToMinutes(b.end_time) && reqEnd > timeToMinutes(b.start_time);
+            });
+        }
+
+        function renderAll() {
+            renderRoomCards();
+            renderAgendaList();
+            renderCompletedAgendaList();
+        }
+
+        function renderRoomCards() {
+            const grid = document.getElementById('rooms-grid');
+            if (!grid) return;
+
+            grid.innerHTML = ROOMS_CONFIG.map(room => {
+                const status = getRoomLiveStatus(room.id);
+                const isOccupied = status.state === 'occupied';
+                const isSoon = status.state === 'upcoming_soon';
+
+                const cardBorder = isOccupied ? 'border-rose-300 ring-2 ring-rose-500/10' : isSoon ? 'border-amber-300' : 'border-slate-200/90 hover:border-emerald-300';
+                const statusPill = isOccupied
+                    ? `<span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold bg-rose-50 text-rose-700 border border-rose-200"><span class="relative w-2 h-2 rounded-full bg-rose-600 live-pulse"></span> Sedang Digunakan</span>`
+                    : isSoon
+                        ? `<span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold bg-amber-50 text-amber-700 border border-amber-200"><span class="w-2 h-2 rounded-full bg-amber-500"></span> Mulai ${status.diffMins} mnt lagi</span>`
+                        : `<span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200"><span class="w-2 h-2 rounded-full bg-emerald-500"></span> Tersedia</span>`;
+
+                const displayCapacity = (isOccupied && status.isPartitionMerged) ? '16' : room.capacity;
+                let bodyContent = '';
+
+                if (isOccupied) {
+                    const b = status.booking;
+                    bodyContent = `
+                        <div class="mt-3 p-3.5 rounded-xl bg-rose-50/70 border border-rose-100 space-y-1.5">
+                            <div class="flex items-center justify-between gap-2">
+                                <span class="text-[11px] font-bold text-rose-700"><i class="fa-regular fa-clock mr-1"></i>${formatTimeShort(b.start_time)} - ${formatTimeShort(b.end_time)}</span>
+                                ${status.isPartitionMerged ? '<span class="text-[10px] font-bold px-2 py-0.5 rounded bg-indigo-100 text-indigo-700">Partisi Dibuka</span>' : ''}
+                            </div>
+                            <div class="flex items-baseline justify-between gap-3">
+                                <p class="text-sm font-extrabold text-slate-900 line-clamp-1">${escapeHtml(b.title)}</p>
+                                <a href="${formatWhatsAppLink(b.whatsapp, b.title, b.booking_date, b.start_time)}" target="_blank" rel="noopener noreferrer" class="inline-flex items-center gap-1.5 text-xs font-semibold text-emerald-700 hover:underline shrink-0">
+                                    <i class="fa-brands fa-whatsapp text-sm"></i><span>${escapeHtml(b.booker_name)}</span>
+                                </a>
+                            </div>
+                        </div>`;
+                } else if (status.nextBooking) {
+                    const nb = status.nextBooking;
+                    bodyContent = `
+                        <div class="mt-3 p-3.5 rounded-xl bg-slate-50 border border-slate-100 space-y-1.5">
+                            <div class="flex items-center justify-between text-[11px] text-slate-500 font-semibold">
+                                <span>Jadwal Berikutnya</span><span class="text-slate-700 font-bold">${formatTimeShort(nb.start_time)} - ${formatTimeShort(nb.end_time)}</span>
+                            </div>
+                            <div class="flex items-baseline justify-between gap-3">
+                                <p class="text-xs font-bold text-slate-800 line-clamp-1">${escapeHtml(nb.title)}</p>
+                                <a href="${formatWhatsAppLink(nb.whatsapp, nb.title, nb.booking_date, nb.start_time)}" target="_blank" rel="noopener noreferrer" class="inline-flex items-center gap-1.5 text-xs font-semibold text-emerald-700 hover:underline shrink-0">
+                                    <i class="fa-brands fa-whatsapp text-sm"></i><span>${escapeHtml(nb.booker_name)}</span>
+                                </a>
+                            </div>
+                        </div>`;
+                } else {
+                    bodyContent = `
+                        <div class="mt-3 p-3.5 rounded-xl bg-emerald-50/40 border border-emerald-100/80 flex items-center justify-between gap-2">
+                            <span class="text-xs font-medium text-slate-600">Tidak ada jadwal tersisa hari ini</span>
+                            <button onclick="quickBookRoom('${room.id}')" class="text-xs font-bold text-blue-600 hover:text-blue-700 whitespace-nowrap">+ Booking</button>
+                        </div>`;
+                }
+
+                return `
+                    <div class="bg-white rounded-2xl border ${cardBorder} p-5 shadow-xs transition-all flex flex-col justify-between">
+                        <div>
+                            <div class="flex items-center justify-between gap-2 mb-3">
+                                <div>${statusPill}</div>
+                                <div class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-slate-100 text-slate-700 text-xs font-bold">
+                                    <i class="fa-solid fa-users text-slate-500 text-[11px]"></i><span>Maks ${displayCapacity}</span>
+                                </div>
+                            </div>
+                            <h3 class="text-xl font-extrabold text-slate-900 tracking-tight">${room.name}</h3>
+                            ${bodyContent}
+                        </div>
+                    </div>`;
+            }).join('');
+        }
+
+        function renderAgendaList() {
+            const container = document.getElementById('agenda-list-container');
+            const badge = document.getElementById('active-count-badge');
+            if (!container) return;
+
+            const today = getTodayStr();
+            const filtered = bookings
+                .filter(b => !isBookingCompleted(b))
+                .sort((a, b) => a.booking_date !== b.booking_date ? a.booking_date.localeCompare(b.booking_date) : timeToMinutes(a.start_time) - timeToMinutes(b.start_time));
+
+            if (badge) badge.textContent = `${filtered.length} Agenda Aktif`;
+
+            if (filtered.length === 0) {
+                container.innerHTML = `
+                    <div class="px-6 py-12 text-center text-slate-400">
+                        <i class="fa-regular fa-calendar-xmark text-3xl mb-2 text-slate-300"></i>
+                        <p class="text-sm font-semibold text-slate-600">Belum ada jadwal ruang meeting aktif</p>
+                        <p class="text-xs mt-0.5">Klik panel QR Code di samping kanan untuk membuat reservasi baru.</p>
+                    </div>`;
+                return;
+            }
+
+            container.innerHTML = filtered.map(b => {
+                const isRowToday = b.booking_date === today;
+                const { dayName, dateText } = formatFullDayAndDateParts(b.booking_date);
+                const roomBadgeClass = b.room === 'Bravery + Agility' ? 'bg-indigo-50 text-indigo-700 border-indigo-200' : 'bg-slate-100 text-slate-700 border-slate-200';
+                const participantCount = Number(b.participants) || 0;
+
+                return `
+                    <div class="min-w-[860px] px-4 py-3 sm:px-5 hover:bg-slate-50/90 transition-colors grid grid-cols-[145px_95px_125px_minmax(240px,1fr)_90px_140px_68px] items-center gap-2 text-left">
+                        <div class="flex flex-col justify-center leading-snug">
+                            <span class="text-xs font-bold text-slate-800">${dayName}</span>
+                            <div class="text-[11px] font-medium text-slate-500">
+                                <span>${dateText}</span>${isRowToday ? '<span class="ml-1 text-emerald-600 font-extrabold">(Hari Ini)</span>' : ''}
+                            </div>
+                        </div>
+                        <div class="text-xs font-extrabold text-blue-700 tabular-nums">${formatTimeShort(b.start_time)} - ${formatTimeShort(b.end_time)}</div>
+                        <div class="flex items-center justify-start"><span class="inline-flex items-center px-2.5 py-0.5 rounded-lg border text-[11px] font-bold truncate ${roomBadgeClass}">${escapeHtml(b.room)}</span></div>
+                        <div class="text-xs sm:text-sm font-bold text-slate-900 truncate" title="${escapeHtml(b.title)}">${escapeHtml(b.title)}</div>
+                        <div class="flex items-center justify-center">
+                            <span class="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-slate-100 text-slate-700 border border-slate-200/80 text-xs font-bold tabular-nums">
+                                <i class="fa-solid fa-users text-slate-500 text-[10px]"></i>${participantCount} Org
+                            </span>
+                        </div>
+                        <div class="flex items-center justify-start truncate">
+                            <a href="${formatWhatsAppLink(b.whatsapp, b.title, b.booking_date, b.start_time)}" target="_blank" rel="noopener noreferrer" class="inline-flex items-center gap-1.5 text-xs font-semibold text-emerald-700 hover:underline truncate">
+                                <i class="fa-brands fa-whatsapp text-sm shrink-0"></i><span class="truncate">${escapeHtml(b.booker_name)}</span>
+                            </a>
+                        </div>
+                        <div class="flex items-center justify-end">
+                            <button type="button" onclick="openPinModal('${b.id}')" title="Batalkan jadwal" class="inline-flex flex-col items-center justify-center gap-0.5 px-3 py-1.5 rounded-xl bg-rose-50 hover:bg-rose-600 text-rose-600 hover:text-white border border-rose-200 text-[10px] font-bold shadow-xs transition-all">
+                                <i class="fa-regular fa-trash-can text-xs"></i><span>Hapus</span>
+                            </button>
+                        </div>
+                    </div>`;
+            }).join('');
+        }
+
+        function renderCompletedAgendaList() {
+            const container = document.getElementById('completed-agenda-list-container');
+            const badge = document.getElementById('completed-count-badge');
+            if (!container) return;
+
+            const completed = bookings.filter(b => isBookingCompleted(b)).sort((a, b) => b.booking_date.localeCompare(a.booking_date));
+            if (badge) badge.textContent = `${completed.length} Rapat Selesai`;
+
+            if (completed.length === 0) {
+                container.innerHTML = `<div class="px-6 py-10 text-center text-slate-400"><p class="text-xs font-medium text-slate-400">Belum ada riwayat rapat yang selesai</p></div>`;
+                return;
+            }
+
+            container.innerHTML = completed.map(b => {
+                const { dayName, dateText } = formatFullDayAndDateParts(b.booking_date);
+
+                return `
+                    <div class="min-w-[820px] px-4 py-3 sm:px-5 bg-slate-50/70 hover:bg-slate-100/70 text-slate-400 transition-colors grid grid-cols-[185px_115px_145px_minmax(180px,1fr)_165px_110px] items-center gap-3 text-left">
+                        <div class="flex flex-col justify-center leading-snug text-slate-400">
+                            <span class="text-xs font-semibold text-slate-400 line-through decoration-slate-300">${dayName}</span><span class="text-[11px] text-slate-400 line-through decoration-slate-300">${dateText}</span>
+                        </div>
+                        <div class="text-xs font-medium text-slate-400 tabular-nums line-through decoration-slate-300">${formatTimeShort(b.start_time)} - ${formatTimeShort(b.end_time)}</div>
+                        <div class="flex items-center justify-start"><span class="inline-flex items-center px-2.5 py-0.5 rounded-lg border border-slate-200 bg-slate-100 text-slate-400 text-[11px] font-medium truncate line-through decoration-slate-300">${escapeHtml(b.room)}</span></div>
+                        <div class="text-xs sm:text-sm font-medium text-slate-400 line-through decoration-slate-400 truncate" title="${escapeHtml(b.title)}">${escapeHtml(b.title)}</div>
+                        <div class="flex items-center justify-start truncate">
+                            <a href="${formatWhatsAppLink(b.whatsapp, b.title, b.booking_date, b.start_time)}" target="_blank" rel="noopener noreferrer" class="inline-flex items-center gap-1.5 text-xs font-medium text-slate-400 hover:text-slate-600 hover:underline truncate">
+                                <i class="fa-brands fa-whatsapp text-sm text-slate-400 shrink-0"></i><span class="truncate line-through decoration-slate-300">${escapeHtml(b.booker_name)}</span>
+                            </a>
+                        </div>
+                        <div class="flex items-center justify-center">
+                            <span class="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-slate-100 text-slate-400 border border-slate-200 text-[10px] font-semibold"><i class="fa-solid fa-check text-[9px]"></i> Selesai</span>
+                        </div>
+                    </div>`;
+            }).join('');
+        }
+
+        function quickBookRoom(roomId) {
+            switchView('booking');
+            const roomSelect = document.getElementById('input-room');
+            if (roomSelect) {
+                roomSelect.value = roomId;
+                handleRoomManualChange();
+            }
+        }
+
+        function handleParticipantsChange() {
+            const count = parseInt(document.getElementById('input-participants').value || '0', 10);
+            const roomSelect = document.getElementById('input-room');
+            const banner = document.getElementById('partition-recommendation-box');
+
+            if (count > 10) {
+                roomSelect.value = 'Bravery + Agility';
+                banner.classList.remove('hidden');
+                userManuallySelectedRoom = false;
+            } else {
+                banner.classList.add('hidden');
+                if (!userManuallySelectedRoom && roomSelect.value === 'Bravery + Agility') roomSelect.value = 'Bravery';
+            }
+            validateLiveAvailability();
+        }
+
+        function handleRoomManualChange() {
+            userManuallySelectedRoom = true;
+            const room = document.getElementById('input-room').value;
+            const participantsInput = document.getElementById('input-participants');
+            const banner = document.getElementById('partition-recommendation-box');
+
+            if (room === 'Bravery + Agility') {
+                banner.classList.remove('hidden');
+            } else {
+                banner.classList.add('hidden');
+                if (parseInt(participantsInput.value || '0', 10) > 10) participantsInput.value = 10;
+            }
+            validateLiveAvailability();
+        }
+
+        function validateLiveAvailability() {
+            const dateStr = document.getElementById('input-date').value;
+            const startStr = document.getElementById('input-start').value;
+            const endStr = document.getElementById('input-end').value;
+            const room = document.getElementById('input-room').value;
+            const feedback = document.getElementById('availability-feedback');
+            const submitBtn = document.getElementById('btn-submit-booking');
+
+            if (!dateStr || !startStr || !endStr) {
+                feedback.classList.add('hidden');
+                return true;
+            }
+
+            if (timeToMinutes(endStr) <= timeToMinutes(startStr)) {
+                feedback.className = 'p-3.5 rounded-xl text-xs font-semibold border bg-rose-50 border-rose-200 text-rose-700 flex items-center gap-2';
+                feedback.innerHTML = '<i class="fa-solid fa-circle-exclamation"></i><span>Jam selesai harus lebih akhir daripada jam mulai.</span>';
+                feedback.classList.remove('hidden');
+                submitBtn.disabled = true;
+                submitBtn.classList.add('opacity-50', 'cursor-not-allowed');
+                return false;
+            }
+
+            const conflict = findConflict(dateStr, startStr, endStr, room);
+            if (conflict) {
+                feedback.className = 'p-3.5 rounded-xl text-xs font-medium border bg-rose-50 border-rose-200 text-rose-800 space-y-1';
+                feedback.innerHTML = `<div class="font-bold flex items-center gap-1.5 text-rose-700"><i class="fa-solid fa-triangle-exclamation"></i><span>Jadwal Bentrok pada Ruang ${escapeHtml(room)}!</span></div><p>Sudah dipesan oleh <strong>${escapeHtml(conflict.booker_name)}</strong> (${formatTimeShort(conflict.start_time)} - ${formatTimeShort(conflict.end_time)}) untuk <em>"${escapeHtml(conflict.title)}"</em>.</p>`;
+                feedback.classList.remove('hidden');
+                submitBtn.disabled = true;
+                submitBtn.classList.add('opacity-50', 'cursor-not-allowed');
+                return false;
+            }
+
+            feedback.className = 'p-3.5 rounded-xl text-xs font-semibold border bg-emerald-50 border-emerald-200 text-emerald-800 flex items-center gap-2';
+            feedback.innerHTML = `<i class="fa-solid fa-circle-check text-emerald-600"></i><span>Ruang <strong>${escapeHtml(room)}</strong> tersedia pada waktu tersebut.</span>`;
+            feedback.classList.remove('hidden');
+            submitBtn.disabled = false;
+            submitBtn.classList.remove('opacity-50', 'cursor-not-allowed');
+            return true;
+        }
+
+        async function handleBookingSubmit(e) {
+            e.preventDefault();
+            if (!validateLiveAvailability()) return;
+
+            const newBooking = {
+                room: document.getElementById('input-room').value,
+                title: document.getElementById('input-title').value.trim(),
+                booker_name: document.getElementById('input-name').value.trim(),
+                whatsapp: normalizePhoneNumber(document.getElementById('input-wa').value.trim()),
+                booking_date: document.getElementById('input-date').value,
+                start_time: document.getElementById('input-start').value,
+                end_time: document.getElementById('input-end').value,
+                participants: parseInt(document.getElementById('input-participants').value, 10),
+                cancel_pin: document.getElementById('input-cancel-pin').value.trim()
+            };
+
+            try {
+                if (isSupabaseConnected && supabaseClient) {
+                    const { data, error } = await supabaseClient.rpc('create_booking', {
+                        p_room: newBooking.room,
+                        p_title: newBooking.title,
+                        p_booker_name: newBooking.booker_name,
+                        p_whatsapp: newBooking.whatsapp,
+                        p_booking_date: newBooking.booking_date,
+                        p_start_time: newBooking.start_time,
+                        p_end_time: newBooking.end_time,
+                        p_participants: newBooking.participants,
+                        p_pin: newBooking.cancel_pin
+                    });
+                    if (error) throw error;
+                    if (data && !bookings.some(b => b.id === data.id)) bookings.push(data);
+                } else {
+                    newBooking.id = 'local-' + Date.now();
+                    bookings.push(newBooking);
+                    saveLocalBookings();
+                }
+
+                resetBookingForm();
+                showToast(`Berhasil booking ${newBooking.room}!`, 'success');
+                switchView('display');
+            } catch (err) {
+                showToast('Gagal menyimpan reservasi: ' + err.message, 'error');
+            }
+        }
+
+        function resetBookingForm() {
+            document.getElementById('input-title').value = '';
+            document.getElementById('input-name').value = '';
+            document.getElementById('input-wa').value = '';
+            document.getElementById('input-participants').value = '6';
+            document.getElementById('input-room').value = 'Bravery';
+            document.getElementById('input-cancel-pin').value = '';
+            document.getElementById('partition-recommendation-box').classList.add('hidden');
+            userManuallySelectedRoom = false;
+            setupDefaultFormValues();
+        }
+
+        function openPinModal(bookingId) {
+            pendingDeleteId = bookingId;
+            const target = bookings.find(b => b.id === bookingId);
+            if (target) {
+                document.getElementById('pin-modal-desc').innerHTML = `Masukkan 4 digit PIN pembatalan untuk jadwal <strong>"${escapeHtml(target.title)}"</strong>.`;
+            }
+            document.getElementById('pin-input').value = '';
+            document.getElementById('pin-error-msg').classList.add('hidden');
+            const modal = document.getElementById('pin-modal');
+            modal.classList.remove('hidden');
+            modal.classList.add('flex');
+            setTimeout(() => document.getElementById('pin-input').focus(), 80);
+        }
+
+        function closePinModal() {
+            pendingDeleteId = null;
+            const modal = document.getElementById('pin-modal');
+            modal.classList.add('hidden');
+            modal.classList.remove('flex');
+        }
+
+        async function confirmDeleteWithPin(e) {
+            e.preventDefault();
+            const enteredPin = document.getElementById('pin-input').value.trim();
+            const masterPin = localStorage.getItem(STORAGE_KEYS.SECURITY_PIN) || '1234';
+            const target = bookings.find(b => b.id === pendingDeleteId);
+
+            try {
+                if (isSupabaseConnected && supabaseClient) {
+                    // PIN dicek di server (PIN booking atau PIN master)
+                    const { data: ok, error } = await supabaseClient.rpc('delete_booking', { p_id: pendingDeleteId, p_pin: enteredPin });
+                    if (error) throw error;
+                    if (!ok) {
+                        document.getElementById('pin-error-msg').classList.remove('hidden');
+                        return;
+                    }
+                } else {
+                    const bookingPin = target && target.cancel_pin ? String(target.cancel_pin) : masterPin;
+                    if (enteredPin !== bookingPin && enteredPin !== masterPin) {
+                        document.getElementById('pin-error-msg').classList.remove('hidden');
+                        return;
+                    }
+                }
+                bookings = bookings.filter(b => b.id !== pendingDeleteId);
+                if (!isSupabaseConnected) saveLocalBookings();
+
+                closePinModal();
+                renderAll();
+                showToast('Jadwal meeting berhasil dibatalkan.', 'success');
+            } catch (err) {
+                showToast('Gagal menghapus jadwal: ' + err.message, 'error');
+            }
+        }
+
+        function openSettingsModal() {
+            document.getElementById('settings-modal').classList.remove('hidden');
+            document.getElementById('settings-modal').classList.add('flex');
+        }
+
+        function closeSettingsModal() {
+            document.getElementById('settings-modal').classList.add('hidden');
+            document.getElementById('settings-modal').classList.remove('flex');
+        }
+
+        async function saveSupabaseSettings() {
+            const url = document.getElementById('cfg-supabase-url').value.trim();
+            const key = document.getElementById('cfg-supabase-key').value.trim();
+            const pin = document.getElementById('cfg-security-pin').value.trim() || '1234';
+
+            localStorage.setItem(STORAGE_KEYS.SUPABASE_URL, url);
+            localStorage.setItem(STORAGE_KEYS.SUPABASE_KEY, key);
+            localStorage.setItem(STORAGE_KEYS.SECURITY_PIN, pin);
+
+            closeSettingsModal();
+            await initDatabaseConnection();
+            showToast(isSupabaseConnected ? 'Berhasil terhubung ke Supabase!' : 'Pengaturan disimpan dalam Mode Lokal.', 'success');
+        }
+
+        function resetToDemoMode() {
+            localStorage.removeItem(STORAGE_KEYS.BOOKINGS);
+            loadLocalBookings();
+            renderAll();
+            closeSettingsModal();
+            showToast('Data demo lokal telah di-reset.', 'info');
+        }
+
+        function normalizePhoneNumber(phone) {
+            let digits = String(phone || '').replace(/\D/g, '');
+            if (digits.startsWith('0')) digits = '62' + digits.slice(1);
+            else if (digits.startsWith('8')) digits = '62' + digits;
+            return digits;
+        }
+
+        function formatWhatsAppLink(phone, title, dateStr, startTime) {
+            const cleanPhone = normalizePhoneNumber(phone);
+            const msg = encodeURIComponent(`Halo, terkait reservasi ruang meeting "${title}" pada ${formatShortDayDate(dateStr)} pukul ${formatTimeShort(startTime)}...`);
+            return `https://wa.me/${cleanPhone}?text=${msg}`;
+        }
+
+        function escapeHtml(str) {
+            return String(str || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#039;');
+        }
+
+        function showToast(message, type = 'info') {
+            const container = document.getElementById('toast-container');
+            if (!container) return;
+            const colors = {
+                success: 'bg-slate-900 text-white border-emerald-500/40',
+                error: 'bg-rose-600 text-white border-rose-400',
+                warning: 'bg-amber-600 text-white border-amber-400',
+                info: 'bg-slate-800 text-white border-blue-400/40'
+            };
+            const toast = document.createElement('div');
+            toast.className = `pointer-events-auto flex items-center gap-3 px-4 py-3 rounded-2xl shadow-xl border text-xs font-semibold transition-all duration-300 ${colors[type] || colors.info}`;
+            toast.innerHTML = `<i class="fa-solid fa-circle-info text-base"></i><span class="flex-1 leading-relaxed">${escapeHtml(message)}</span>`;
+            container.appendChild(toast);
+            setTimeout(() => {
+                toast.classList.add('opacity-0', 'translate-y-2');
+                setTimeout(() => toast.remove(), 300);
+            }, 3500);
+        }
+    </script>
+</body>
+</html>
